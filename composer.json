@@ -1,0 +1,26 @@
+{
+	"name": "aensley/cap-alert-ifttt",
+	"type": "library",
+	"license": "MIT",
+	"homepage": "https://github.com/aensley/cap-alert-ifttt/",
+	"description": "A simple Library to help send weather and other alerts to IFTTT.",
+	"keywords": ["weather", "cap", "alert", "ifttt"],
+	"authors": [
+		{
+			"name": "Andrew Ensley",
+			"homepage": "https://andrewensley.com"
+		}
+	],
+	"autoload": {
+		"psr-4": { "Aensley\\": "src/Aensley" }
+	},
+	"require": {
+		"php": ">=5.6.0",
+		"ext-curl": "*",
+		"ext-simplexml": "*",
+		"ext-json": "*"
+	},
+	"require-dev": {
+		"codeclimate/php-test-reporter": "dev-master"
+	}
+}
