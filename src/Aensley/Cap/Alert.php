@@ -135,7 +135,7 @@ class Alert
      */
     private function getCache()
     {
-        return json_decode(file_get_contents($this->cacheFilePath), true);
+        return (is_readable($this->cacheFilePath) ? json_decode(file_get_contents($this->cacheFilePath), true) : array());
     }
 
 
@@ -165,7 +165,11 @@ class Alert
      */
     private function setCache($data)
     {
-        return (file_put_contents($this->cacheFilePath, json_encode($data)) !== false);
+        try {
+            return (file_put_contents($this->cacheFilePath, json_encode($data)) !== false);
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
 
