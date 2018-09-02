@@ -11,12 +11,41 @@ namespace Aensley\Cap;
 class Alert
 {
 
+    /**
+     * The User Agent for web requests.
+     *
+     * @var string
+     */
     const USER_AGENT = 'aensley/cap-alert-ifttt v1.0';
+
+    /**
+     * The Feed URL template for CAP alerts.
+     *
+     * @var string
+     */
     const FEED_URL_TEMPLATE = 'https://alerts.weather.gov/cap/wwaatmget.php?x={ALERT_ZONE}&y=0';
+
+    /**
+     * The IFTTT Webhook URL Template.
+     *
+     * @var string
+     */
     const POST_URL_TEMPLATE = 'https://maker.ifttt.com/trigger/{IFTTT_EVENT}/with/key/{IFTTT_KEY}';
+
+    /**
+     * The default name for the cache file.
+     *
+     * @var string
+     */
     const CACHE_FILE_NAME = 'cap_alerts.json';
 
-    // https://www.oasis-open.org/committees/download.php/14759/emergency-CAPv1.1.pdf
+    /**
+     * The array of properties that designate important events. For each key supplied, an entry must have one of the
+     * values specified here. If it does not, it will be considered unimportant for the sake of alerting.
+     *
+     * @see https://www.oasis-open.org/committees/download.php/14759/emergency-CAPv1.1.pdf
+     * @var array
+     */
     public $important = array(
         'status' => array('Actual'),
         'msgType' => array('Alert', 'Update'),
@@ -25,29 +54,102 @@ class Alert
         'certainty' => array('Observed', 'Likely', 'Unknown'),
     );
 
+    /**
+     * Valid log level names and their corresponding values.
+     *
+     * @var array
+     */
+    private $logLevels = array('none' => 1000, 'error' => 400, 'warning' => 300, 'info' => 200, 'debug' => 100);
+
+    /**
+     * The log level.
+     *
+     * @var int
+     */
+    private $logLevel = 2;
+
+    /**
+     * Logger object of a class implementing Psr\Log\LoggerInterface.
+     *
+     * @var object
+     */
+    private $logger;
+
+    /**
+     * The zone or county ID for the Alert feed.
+     *
+     * @see https://alerts.weather.gov/
+     * @var string
+     */
     public $alertZone = '';
+
+    /**
+     * The name of the IFTTT event to be used in the webhook.
+     *
+     * @var string
+     */
     public $iftttEvent = '';
+
+    /**
+     * The API key for IFTTT to use the webhook.
+     *
+     * @var string
+     */
     public $iftttKey = '';
+
+    /**
+     * Set to false to ignore updates to existing alerts.
+     *
+     * @var bool
+     */
     public $sendUpdates = true;
+
+    /**
+     * The absolute path to the cache file.
+     *
+     * @var string
+     */
     private $cacheFilePath = '';
 
 
     /**
-     * Alert constructor
-     * .
-     * @param string $alertZone The zone or county ID for the Alert feed. Lookup here: https://alerts.weather.gov/
-     * @param string $iftttEvent The name of the IFTTT event to be used in the webhook.
-     * @param string $iftttKey The API key for IFTTT to use the webhook.
-     * @param bool $sendUpdates Set to false to ignore updates to existing alerts.
-     * @param string $cacheFile The absolute path to the file to be used as a local cache.
+     * Alert constructor.
+     *
+     * @param string $alertZone   The zone or county ID for the Alert feed. Lookup here: https://alerts.weather.gov/
+     * @param string $iftttEvent  The name of the IFTTT event to be used in the webhook.
+     * @param string $iftttKey    The API key for IFTTT to use the webhook.
+     * @param bool   $sendUpdates Set to false to ignore updates to existing alerts.
+     * @param string $cacheFile   The absolute path to the file to be used as a local cache.
+     * @param mixed  $logger      Set the logger object (implementing Psr\Log\LoggerInterface) to handle messages.
+     *                            Otherwise, set to a valid log level string to use internal simple logger.
      */
-    public function __construct($alertZone, $iftttEvent, $iftttKey, $sendUpdates = true, $cacheFile = '')
+    public function __construct($alertZone, $iftttEvent, $iftttKey, $sendUpdates = true, $cacheFile = '', $logger = 'warning')
     {
         $this->alertZone = $alertZone;
         $this->iftttEvent = $iftttEvent;
         $this->iftttKey = $iftttKey;
         $this->sendUpdates = $sendUpdates;
         $this->cacheFilePath = ($cacheFile ? $cacheFile : '/tmp/' . self::CACHE_FILE_NAME);
+        $this->setLogger($logger);
+    }
+
+
+    /**
+     * Set the logger object.
+     * The $logger is required and must be an object of a class implementing Psr\Log\LoggerInterface.
+     *
+     * @param mixed $logger Object of a class implementing Psr\Log\LoggerInterface to handle messages.
+     *                      Otherwise, a valid log level string to use internal simple logger.
+     */
+    public function setLogger($logger)
+    {
+        if (is_object($logger)) {
+            $this->logger = $logger;
+            return;
+        }
+        if (is_string($logger) && isset($this->logLevels[$logger])) {
+            $this->logLevel = $this->logLevels[$logger];
+        }
     }
 
 
@@ -64,23 +166,29 @@ class Alert
 
         $isUpdate = false;
         $cache = $this->getCache();
+        $this->log('info', count($rss->entry) . ' entries.');
         foreach ($rss->entry as $entry) {
             $entry = $this->normalizeEntry($entry);
+            $this->log('info', 'Title: ' . $entry['title']);
             if ($entry['id'] == $feedUrl) {
-                // NO ALERTS
+                $this->log('info', 'There are no alerts.');
                 break;
             }
 
             if (!$this->isImportantAlert($entry)) {
-                // This alert is not important. Skip it.
                 continue;
             }
 
             if (isset($cache[$entry['id']])) {
                 $cacheEntry = $cache[$entry['id']];
                 if (!$this->sendUpdates || $cacheEntry['updated'] === $entry['updated']) {
+                    $this->log(
+                        'info',
+                        'This entry has already been sent to IFTTT, and there is no update, or updates are disabled.'
+                    );
                     continue;
                 } elseif ($cacheEntry['updated'] > $entry['updated']) {
+                    $this->log('debug', 'This is an update to an existing alert');
                     $isUpdate = true;
                 }
             }
@@ -93,7 +201,8 @@ class Alert
                     : ''
                 )
                 . '. Expires ' . $this->formatTime($entry['expires']) . '.';
-            $data = array('value1' => (string) $entry->id, 'value2' => $title, 'value3' => $details);
+            $this->log('debug', 'Alert to be sent: ' . $title . $details . ' ' );
+            $data = array('value1' => $entry['id'], 'value2' => $title, 'value3' => $details);
             $this->postJson($data);
         }
 
@@ -135,7 +244,13 @@ class Alert
      */
     private function getCache()
     {
-        return (is_readable($this->cacheFilePath) ? json_decode(file_get_contents($this->cacheFilePath), true) : array());
+        $this->log('info', 'Getting cache data');
+        if (is_readable($this->cacheFilePath)) {
+            return json_decode(file_get_contents($this->cacheFilePath), true);
+        }
+
+        $this->log('warning', 'Unable to read cache file.');
+        return array();
     }
 
 
@@ -148,6 +263,7 @@ class Alert
      */
     private function trimCache($data)
     {
+        $this->log('debug', 'Trimming cache of ' . count($data) . ' entries.');
         uasort($data, function($a, $b) {
             // Sort by updated time in descending order.
             return $a['updated'] < $b['updated'];
@@ -165,9 +281,11 @@ class Alert
      */
     private function setCache($data)
     {
+        $this->log('info', 'Setting cache data.');
         try {
             return (file_put_contents($this->cacheFilePath, json_encode($data)) !== false);
         } catch (\Exception $e) {
+            $this->log('error', 'Error setting cache data: ' . $e->getMessage());
             return false;
         }
     }
@@ -222,13 +340,22 @@ class Alert
      */
     private function isImportantAlert($entry)
     {
+        $this->log('info', 'Checking if ' . $entry['title'] . ' is important.');
         foreach ($this->important as $key => $validValues) {
+            $this->log('debug', 'Checking ' . $key);
             if (!in_array($entry[$key], $validValues, true)) {
+                $this->log('info', 'Failed on ' . $key . ' = "' . $entry[$key] . '". This entry is not important.');
                 return false;
             }
         }
 
-        return ($entry['expires'] > time());
+        if ($entry['expires'] <= time()) {
+            $this->log('info', 'This entry has already expired. It is not important.');
+            return false;
+        }
+
+        $this->log('debug', 'This entry IS important.');
+        return true;
     }
 
 
@@ -241,6 +368,7 @@ class Alert
      */
     private function getXml($url)
     {
+        $this->log('info', 'Retrieving XML from: ' . $url);
         $curl = curl_init($url);
         curl_setopt($curl, CURLOPT_HEADER, false);
         curl_setopt($curl, CURLOPT_TIMEOUT, 20);
@@ -252,11 +380,18 @@ class Alert
         }
 
         $result = curl_exec($curl);
-        return (
-        curl_errno($curl) === 0 && curl_getinfo($curl, CURLINFO_HTTP_CODE) === 200
-            ? simplexml_load_string($result)
-            : false
-        );
+        $errorNumber = curl_error($curl);
+        $httpResponse = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        if ($errorNumber !== 0) {
+            $this->log('error', 'Curl transport error ' . $errorNumber);
+        } elseif ($httpResponse !== 200) {
+            $this->log('error', 'HTTP Error ' . $httpResponse);
+        } else {
+            $this->log('debug', "Success! Result:\n" . $result);
+            return simplexml_load_string($result);
+        }
+
+        return false;
     }
 
 
@@ -270,7 +405,10 @@ class Alert
     private function postJson($data)
     {
         $data = json_encode($data);
-        $curl = curl_init($this->getPostUrl());
+        $url = $this->getPostUrl();
+        $this->log('info', 'Posting JSON to: ' . $url);
+        $this->log('debug', 'Data: ' . $data);
+        $curl = curl_init($url);
         curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'POST');
         curl_setopt($curl, CURLOPT_TIMEOUT, 20);
         curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
@@ -284,7 +422,37 @@ class Alert
                 'Content-Length: ' . strlen($data)
             )
         );
-        curl_exec($curl);
-        return (curl_errno($curl) === 0 && curl_getinfo($curl, CURLINFO_HTTP_CODE) === 200);
+        $result = curl_exec($curl);
+        $errorNumber = curl_error($curl);
+        $httpResponse = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        if ($errorNumber !== 0) {
+            $this->log('error', 'Curl transport error ' . $errorNumber);
+        } elseif ($httpResponse !== 200) {
+            $this->log('error', 'HTTP Error ' . $httpResponse);
+        } else {
+            $this->log('debug', 'Success! Result: ' . $result);
+            return true;
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Logs a message.
+     *
+     * @param string $level The log level of the message.
+     * @param string $text  The message to log.
+     */
+    private function log($level = 'info', $text = '')
+    {
+        if (isset($this->logger)) {
+            $this->logger->log($level, $text);
+            return;
+        }
+
+        if ($this->logLevel <= $this->logLevels[$level]) {
+            echo strtoupper($level), ': ', $text, "\n";
+        }
     }
 }
