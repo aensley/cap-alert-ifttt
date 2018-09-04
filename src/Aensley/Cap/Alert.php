@@ -194,7 +194,7 @@ class Alert
             }
 
             $cache[$entry['id']] = $entry;
-            $title = $entry['event'] . ($isUpdate ? ' Update' : '') . '. ';
+            $title = $entry['event'] . ($isUpdate ? ' Update' : '');
             $details = (
                     $entry['effective'] > time()
                     ? 'Effective ' . $this->formatTime($entry['effective']) . '. '
@@ -304,7 +304,7 @@ class Alert
         return array(
             'id' => (string) $entry->id,
             'title' => trim((string) $entry->title),
-            'event' => (string) $cap->event,
+            'event' => strtoupper(trim((string) $cap->event)),
             'published' => strtotime($entry->published),
             'updated' => strtotime($entry->updated),
             'status' => (string) $cap->status,
