@@ -380,7 +380,7 @@ class Alert
         }
 
         $result = curl_exec($curl);
-        $errorNumber = curl_error($curl);
+        $errorNumber = curl_errno($curl);
         $httpResponse = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         if ($errorNumber !== 0) {
             $this->log('error', 'Curl transport error ' . $errorNumber);
@@ -423,7 +423,7 @@ class Alert
             )
         );
         $result = curl_exec($curl);
-        $errorNumber = curl_error($curl);
+        $errorNumber = curl_errno($curl);
         $httpResponse = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         if ($errorNumber !== 0) {
             $this->log('error', 'Curl transport error ' . $errorNumber);
