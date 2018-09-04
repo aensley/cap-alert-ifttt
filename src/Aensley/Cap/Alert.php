@@ -194,13 +194,13 @@ class Alert
             }
 
             $cache[$entry['id']] = $entry;
-            $title = $entry['event'] . ($isUpdate ? ' Update' : '');
+            $title = $entry['event'] . ($isUpdate ? ' Update' : '') . '. ';
             $details = (
                     $entry['effective'] > time()
-                    ? '. Effective ' . $this->formatTime($entry['effective'])
+                    ? 'Effective ' . $this->formatTime($entry['effective']) . '. '
                     : ''
                 )
-                . '. Expires ' . $this->formatTime($entry['expires']) . '.';
+                . 'Expires ' . $this->formatTime($entry['expires']) . '.';
             $this->log('debug', 'Alert to be sent: ' . $title . $details . ' ' );
             $data = array('value1' => $entry['id'], 'value2' => $title, 'value3' => $details);
             $this->postJson($data);
@@ -303,7 +303,7 @@ class Alert
         $cap = $entry->children('urn:oasis:names:tc:emergency:cap:1.1');
         return array(
             'id' => (string) $entry->id,
-            'title' => (string) $entry->title,
+            'title' => trim((string) $entry->title),
             'event' => (string) $cap->event,
             'published' => strtotime($entry->published),
             'updated' => strtotime($entry->updated),
